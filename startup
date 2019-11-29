@@ -1,0 +1,37 @@
+#!/bin/bash
+accId="${AWS_ACCOUNT_ID}"
+if [ "$1" != "" ]; then
+    accId=$1
+fi
+aws s3api create-bucket --bucket terraform-backend-store-nifi --region us-east-1
+
+aws iam create-user --user-name terraform-deployer
+
+aws iam attach-user-policy --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess --user-name terraform-deployer
+
+aws iam attach-user-policy --policy-arn arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess --user-name terraform-deployer
+
+cat <<-EOF > policy.json
+{
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "$accId"
+            },
+            "Action": "s3:*",
+            "Resource": "arn:aws:s3:::terraform-backend-store-nifi"
+        }
+    ]
+}
+EOF
+cat policy.json
+aws s3api put-bucket-policy --bucket terraform-backend-store-nifi --policy file://policy.json
+
+aws s3api put-bucket-versioning --bucket terraform-backend-store-nifi --versioning-configuration Status=Enabled
+
+cd dynamodb;\
+terraform init;\
+terraform plan -out "planfile";\
+terraform apply -input=false -auto-approve "planfile";\
+cd ..;
